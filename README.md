@@ -28,15 +28,15 @@ plus `@neondatabase/serverless` (database) and `web-push` (notifications).
 ## Setup (once)
 
 1. **Vercel project**: import this repository in Vercel (New Project → `dashboard`).
-2. **Database**: in the project, Storage → Create → Neon (free). It adds `DATABASE_URL`.
+2. **Database**: in the project, Storage → Create → Neon (free), custom prefix `DATABASE` so it adds
+   `DATABASE_URL`. The app creates its tables itself on first use (`src/lib/schema.ts`).
 3. **Secrets**: run `pnpm setup:secrets` and `pnpm setup:password` locally, and add the printed
    values in Vercel → Settings → Environment Variables (Production).
-4. **Tables**: `pnpm dlx vercel env pull .env.local`, then `pnpm db:migrate`.
-5. **Domain**: Vercel → Settings → Domains → add `dash.marwanelsayed.com`, then add the CNAME
+4. **Domain**: Vercel → Settings → Domains → add `dash.marwanelsayed.com`, then add the CNAME
    record it shows at your domain's DNS.
-6. **iPhone**: open `https://dash.marwanelsayed.com` in Safari, sign in, Share → Add to Home
+5. **iPhone**: open `https://dash.marwanelsayed.com` in Safari, sign in, Share → Add to Home
    Screen, open the app from the Home Screen, Settings → Turn on notifications → Send a test.
-7. **Portfolio**: add `DASHBOARD_INGEST_URL` and `DASHBOARD_INGEST_SECRET` (printed by
+6. **Portfolio**: add `DASHBOARD_INGEST_URL` and `DASHBOARD_INGEST_SECRET` (printed by
    `pnpm setup:secrets`) to the portfolio's Vercel project.
 
 ## Local work

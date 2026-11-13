@@ -1,6 +1,7 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import type { IncomingMessage, MessageStatus, StoredMessage } from "./contact";
 import { sampleMessages } from "./samples";
+import { SCHEMA } from "./schema";
 
 /** A browser's push subscription, as the Push API serialises it. */
 export type PushSubscriptionRecord = {
@@ -58,8 +59,33 @@ const fromRow = (row: Row): StoredMessage => ({
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Runs every store call after the tables exist; the check runs once per server instance. */
+function afterSchema(store: Store, ready: () => Promise<void>): Store {
+  return Object.fromEntries(
+    Object.entries(store).map(([name, call]) => [
+      name,
+      async (...args: unknown[]) => {
+        await ready();
+        return (call as (...a: unknown[]) => unknown)(...args);
+      },
+    ]),
+  ) as unknown as Store;
+}
+
 function neonStore(url: string): Store {
   const sql = neon(url);
+  let schema: Promise<void> | null = null;
+  const ready = () =>
+    (schema ??= (async () => {
+      for (const statement of SCHEMA) await sql.query(statement);
+    })().catch((error: unknown) => {
+      schema = null; // Try again on the next call rather than failing forever.
+      throw error;
+    }));
+  return afterSchema(neonStore_(sql), ready);
+}
+
+function neonStore_(sql: NeonQueryFunction<false, false>): Store {
   return {
     async addMessage(m) {
       const rows = (await sql`
