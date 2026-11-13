@@ -113,9 +113,9 @@ describe("display helpers", () => {
 describe("phone numbers", () => {
   it("keeps a number that looks like one and drops anything else", async () => {
     const { whatsappNumber } = await import("./contact");
-    const keep = parseIncoming({ ...base, phone: " +20 (111) 476-6628 " });
-    expect(keep.ok && keep.value.phone).toBe("+20 (111) 476-6628");
-    expect(whatsappNumber("+20 (111) 476-6628")).toBe("201114766628");
+    const keep = parseIncoming({ ...base, phone: " +20 (100) 000-1234 " });
+    expect(keep.ok && keep.value.phone).toBe("+20 (100) 000-1234");
+    expect(whatsappNumber("+20 (100) 000-1234")).toBe("201000001234");
     for (const phone of ["call me", "12345", "+1 234 567 890 123 456 7", "<b>1234567</b>"]) {
       const result = parseIncoming({ ...base, phone });
       expect(result.ok && result.value.phone).toBe("");
