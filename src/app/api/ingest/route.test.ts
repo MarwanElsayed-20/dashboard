@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const addMessage = vi.fn();
 const notifyAll = vi.fn();
-vi.mock("@/lib/store", () => ({ getStore: () => ({ addMessage }) }));
+vi.mock("@/lib/store", () => ({
+  getStore: () => ({ addMessage, counts: async () => ({ new: 3, all: 3, archived: 0 }) }),
+}));
 vi.mock("@/lib/push", () => ({ notifyAll: (...args: unknown[]) => notifyAll(...args) }));
 
 const { POST } = await import("./route");
@@ -47,6 +49,7 @@ describe("POST /api/ingest", () => {
       title: "Job opportunity · Acme: Lena",
       url: "/messages/id-1",
       tag: "id-1",
+      badge: 3,
     });
   });
 

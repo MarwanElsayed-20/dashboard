@@ -1,7 +1,14 @@
 import webpush from "web-push";
 import type { Store } from "./store";
 
-export type PushPayload = { title: string; body: string; url: string; tag?: string };
+/**  is the unread count for the Home Screen icon, when known. */
+export type PushPayload = {
+  title: string;
+  body: string;
+  url: string;
+  tag?: string;
+  badge?: number;
+};
 
 function configured(): boolean {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();

@@ -42,6 +42,7 @@ export type ContactTopic = ValueOf<typeof CONTACT_TOPICS>;
 
 export const LIMITS = {
   name: 100,
+  phone: 40,
   email: 254,
   website: 300,
   company: 120,
@@ -54,6 +55,7 @@ export type IncomingMessage = {
   topic: ContactTopic;
   name: string;
   email: string;
+  phone: string;
   website: string;
   projectKind: string;
   budget: string;
@@ -65,10 +67,28 @@ export type IncomingMessage = {
 
 export type MessageStatus = "new" | "read" | "archived";
 
+/** Where a message stands as a lead, set by the owner. Separate from read/archived. */
+export const LEAD_STAGES = [
+  { value: "open", label: "Open" },
+  { value: "replied", label: "Replied" },
+  { value: "won", label: "Won" },
+  { value: "lost", label: "Lost" },
+] as const;
+export type LeadStage = ValueOf<typeof LEAD_STAGES>;
+
+export function isLeadStage(value: unknown): value is LeadStage {
+  return LEAD_STAGES.some((stage) => stage.value === value);
+}
+
+/** A dated note the owner adds to a message ("Called them Tuesday"). */
+export type MessageNote = { id: string; body: string; createdAt: Date };
+export const NOTE_LIMIT = 2000;
+
 export type StoredMessage = IncomingMessage & {
   id: string;
   receivedAt: Date;
   status: MessageStatus;
+  stage: LeadStage;
 };
 
 export function labelOf(options: readonly Option[], value: string): string {
@@ -80,6 +100,18 @@ const text = (value: unknown, max: number) =>
 
 const known = (options: readonly Option[], value: unknown) =>
   typeof value === "string" && options.some((option) => option.value === value) ? value : "";
+
+/** Keeps a phone number only if it looks like one: digits with spaces, dots, dashes, brackets, a leading +. */
+function phoneOf(value: unknown): string {
+  const phone = text(value, LIMITS.phone);
+  const digits = phone.replace(/\D/g, "").length;
+  return /^\+?[\d\s().-]+$/.test(phone) && digits >= 6 && digits <= 15 ? phone : "";
+}
+
+/** The number for wa.me links: digits only, with the country code if one was typed. */
+export function whatsappNumber(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -98,6 +130,7 @@ export function parseIncoming(
     topic,
     name: text(body.name, LIMITS.name),
     email: text(body.email, LIMITS.email),
+    phone: phoneOf(body.phone),
     website: text(body.website, LIMITS.website),
     projectKind: topic === "project" ? known(PROJECT_KINDS, body.projectKind) : "",
     budget: topic === "project" ? known(PROJECT_BUDGETS, body.budget) : "",

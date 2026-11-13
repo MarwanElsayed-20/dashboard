@@ -4,7 +4,17 @@ import { TopicBadge } from "@/components/topic-badge";
 import { requireOwner } from "@/lib/auth";
 import { senderOf, summary } from "@/lib/contact";
 import { relativeTime } from "@/lib/format";
-import { getStore, type MessageView } from "@/lib/store";
+import { cleanSearch, getStore, type MessageView } from "@/lib/store";
+import { StageLabel } from "@/components/stage-label";
+
+/** The inbox address for a view, keeping the search if there is one. */
+function inboxHref(view: MessageView, search: string): string {
+  const query = new URLSearchParams();
+  if (view !== "all") query.set("view", view);
+  if (search) query.set("q", search);
+  const text = query.toString();
+  return text ? `/?${text}` : "/";
+}
 
 export const metadata: Metadata = { title: "Inbox" };
 export const dynamic = "force-dynamic";
@@ -24,15 +34,17 @@ const EMPTY: Record<MessageView, string> = {
 export default async function InboxPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; q?: string }>;
 }) {
   await requireOwner();
-  const requested = (await searchParams).view;
+  const params = await searchParams;
+  const requested = params.view;
+  const search = cleanSearch(params.q);
   const view: MessageView = VIEWS.some((v) => v.value === requested)
     ? (requested as MessageView)
     : "all";
   const store = getStore();
-  const [messages, counts] = await Promise.all([store.listMessages(view), store.counts()]);
+  const [messages, counts] = await Promise.all([store.listMessages(view, search), store.counts()]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -45,7 +57,7 @@ export default async function InboxPage({
         {VIEWS.map(({ value, label }) => (
           <Link
             key={value}
-            href={value === "all" ? "/" : `/?view=${value}`}
+            href={inboxHref(value, search)}
             aria-current={view === value ? "page" : undefined}
             className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border-strong px-4 text-sm font-medium aria-[current=page]:border-foreground aria-[current=page]:bg-foreground aria-[current=page]:text-surface"
           >
@@ -55,8 +67,41 @@ export default async function InboxPage({
         ))}
       </nav>
 
+      <form role="search" action="/" className="flex gap-2">
+        {view !== "all" ? <input type="hidden" name="view" value={view} /> : null}
+        <label htmlFor="inbox-search" className="sr-only">
+          Search messages
+        </label>
+        <input
+          id="inbox-search"
+          name="q"
+          type="search"
+          defaultValue={search}
+          maxLength={100}
+          placeholder="Search name, email, company or text"
+          className="min-h-11 w-full min-w-0 rounded-full border border-border-strong bg-surface px-4 text-base placeholder:text-muted focus-visible:border-foreground"
+        />
+        <button className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-foreground px-5 text-sm font-semibold text-surface">
+          Search
+        </button>
+      </form>
+
+      {search ? (
+        <p className="-mt-4 flex flex-wrap items-center gap-x-3 text-sm text-muted" role="status">
+          {messages.length} {messages.length === 1 ? "result" : "results"} for “{search}”
+          <Link
+            href={inboxHref(view, "")}
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+          >
+            Clear search
+          </Link>
+        </p>
+      ) : null}
+
       {messages.length === 0 ? (
-        <p className="border-t border-border py-10 text-muted">{EMPTY[view]}</p>
+        <p className="border-t border-border py-10 text-muted">
+          {search ? "No messages match that search." : EMPTY[view]}
+        </p>
       ) : (
         <ul className="border-t border-foreground">
           {messages.map((message) => {
@@ -82,6 +127,7 @@ export default async function InboxPage({
                         {senderOf(message)}
                       </span>
                       <TopicBadge topic={message.topic} />
+                      {message.stage !== "open" ? <StageLabel stage={message.stage} /> : null}
                       {isNew ? <span className="sr-only">(new)</span> : null}
                     </span>
                     {details ? <span className="text-sm text-muted">{details}</span> : null}

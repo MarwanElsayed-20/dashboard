@@ -1,5 +1,11 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
-import type { IncomingMessage, MessageStatus, StoredMessage } from "./contact";
+import type {
+  IncomingMessage,
+  LeadStage,
+  MessageNote,
+  MessageStatus,
+  StoredMessage,
+} from "./contact";
 import { sampleMessages } from "./samples";
 import { SCHEMA } from "./schema";
 
@@ -16,10 +22,15 @@ export type Counts = { new: number; all: number; archived: number };
 /** Everything the dashboard stores. One implementation talks to Neon, one keeps data in memory. */
 export interface Store {
   addMessage(message: IncomingMessage): Promise<StoredMessage>;
-  listMessages(view: MessageView): Promise<StoredMessage[]>;
+  /** The messages in a view, newest first; `search` matches name, email, company, role or text. */
+  listMessages(view: MessageView, search?: string): Promise<StoredMessage[]>;
   getMessage(id: string): Promise<StoredMessage | null>;
   setStatus(id: string, status: MessageStatus): Promise<void>;
+  setStage(id: string, stage: LeadStage): Promise<void>;
   counts(): Promise<Counts>;
+  listNotes(messageId: string): Promise<MessageNote[]>;
+  addNote(messageId: string, body: string): Promise<void>;
+  deleteNote(noteId: string): Promise<void>;
   saveSubscription(subscription: PushSubscriptionRecord, userAgent: string): Promise<void>;
   removeSubscription(endpoint: string): Promise<void>;
   listSubscriptions(): Promise<PushSubscriptionRecord[]>;
@@ -29,9 +40,11 @@ type Row = {
   id: string;
   received_at: string | Date;
   status: MessageStatus;
+  stage: LeadStage;
   topic: StoredMessage["topic"];
   name: string;
   email: string;
+  phone: string;
   website: string;
   project_kind: string;
   budget: string;
@@ -45,9 +58,11 @@ const fromRow = (row: Row): StoredMessage => ({
   id: row.id,
   receivedAt: new Date(row.received_at),
   status: row.status,
+  stage: row.stage ?? "open",
   topic: row.topic,
   name: row.name,
   email: row.email,
+  phone: row.phone ?? "",
   website: row.website,
   projectKind: row.project_kind,
   budget: row.budget,
@@ -58,6 +73,20 @@ const fromRow = (row: Row): StoredMessage => ({
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The search text, trimmed and capped; empty means no search. */
+export function cleanSearch(search: string | undefined): string {
+  return (search ?? "").trim().replace(/\s+/g, " ").slice(0, 100);
+}
+
+/** A LIKE pattern that matches the text literally, with %, _ and \ escaped. */
+export const likePattern = (search: string) => `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
+const VIEW_WHERE: Record<MessageView, string> = {
+  new: "status = 'new'",
+  all: "status <> 'archived'",
+  archived: "status = 'archived'",
+};
 
 /** Runs every store call after the tables exist; the check runs once per server instance. */
 function afterSchema(store: Store, ready: () => Promise<void>): Store {
@@ -82,25 +111,33 @@ function neonStore(url: string): Store {
       schema = null; // Try again on the next call rather than failing forever.
       throw error;
     }));
-  return afterSchema(neonStore_(sql), ready);
+  return afterSchema(neonQueries(sql), ready);
 }
 
-function neonStore_(sql: NeonQueryFunction<false, false>): Store {
+function neonQueries(sql: NeonQueryFunction<false, false>): Store {
   return {
     async addMessage(m) {
       const rows = (await sql`
-        insert into messages (topic, name, email, website, project_kind, budget, timeline, company, role, message)
-        values (${m.topic}, ${m.name}, ${m.email}, ${m.website}, ${m.projectKind}, ${m.budget}, ${m.timeline}, ${m.company}, ${m.role}, ${m.message})
+        insert into messages (topic, name, email, phone, website, project_kind, budget, timeline, company, role, message)
+        values (${m.topic}, ${m.name}, ${m.email}, ${m.phone}, ${m.website}, ${m.projectKind}, ${m.budget}, ${m.timeline}, ${m.company}, ${m.role}, ${m.message})
         returning *`) as Row[];
       return fromRow(rows[0]);
     },
-    async listMessages(view) {
+    async listMessages(view, search) {
+      const text = cleanSearch(search);
+      // VIEW_WHERE holds fixed SQL only; the search text is always a bound parameter.
       const rows = (
-        view === "new"
-          ? await sql`select * from messages where status = 'new' order by received_at desc limit 200`
-          : view === "archived"
-            ? await sql`select * from messages where status = 'archived' order by received_at desc limit 200`
-            : await sql`select * from messages where status <> 'archived' order by received_at desc limit 200`
+        text
+          ? await sql.query(
+              `select * from messages where ${VIEW_WHERE[view]} and (
+                 name ilike $1 or email ilike $1 or company ilike $1 or role ilike $1
+                 or message ilike $1 or phone ilike $1
+               ) order by received_at desc limit 200`,
+              [likePattern(text)],
+            )
+          : await sql.query(
+              `select * from messages where ${VIEW_WHERE[view]} order by received_at desc limit 200`,
+            )
       ) as Row[];
       return rows.map(fromRow);
     },
@@ -113,6 +150,10 @@ function neonStore_(sql: NeonQueryFunction<false, false>): Store {
       if (!UUID.test(id)) return;
       await sql`update messages set status = ${status} where id = ${id}`;
     },
+    async setStage(id, stage) {
+      if (!UUID.test(id)) return;
+      await sql`update messages set stage = ${stage} where id = ${id}`;
+    },
     async counts() {
       const rows = (await sql`
         select
@@ -121,6 +162,25 @@ function neonStore_(sql: NeonQueryFunction<false, false>): Store {
           count(*) filter (where status = 'archived')::int as archived
         from messages`) as Counts[];
       return rows[0] ?? { new: 0, all: 0, archived: 0 };
+    },
+    async listNotes(messageId) {
+      if (!UUID.test(messageId)) return [];
+      const rows = (await sql`
+        select id, body, created_at from message_notes
+        where message_id = ${messageId} order by created_at`) as {
+        id: string;
+        body: string;
+        created_at: string | Date;
+      }[];
+      return rows.map((r) => ({ id: r.id, body: r.body, createdAt: new Date(r.created_at) }));
+    },
+    async addNote(messageId, body) {
+      if (!UUID.test(messageId)) return;
+      await sql`insert into message_notes (message_id, body) values (${messageId}, ${body})`;
+    },
+    async deleteNote(noteId) {
+      if (!UUID.test(noteId)) return;
+      await sql`delete from message_notes where id = ${noteId}`;
     },
     async saveSubscription(s, userAgent) {
       await sql`
@@ -145,6 +205,7 @@ function neonStore_(sql: NeonQueryFunction<false, false>): Store {
 /** For local development without a database: sample messages, lost on restart. */
 function memoryStore(): Store {
   const messages: StoredMessage[] = sampleMessages();
+  const notes = new Map<string, MessageNote & { messageId: string }>();
   const subscriptions = new Map<string, PushSubscriptionRecord>();
   const visible = (view: MessageView) => (m: StoredMessage) =>
     view === "new"
@@ -152,6 +213,7 @@ function memoryStore(): Store {
       : view === "archived"
         ? m.status === "archived"
         : m.status !== "archived";
+  const find = (id: string) => messages.find((m) => m.id === id);
   return {
     async addMessage(m) {
       const stored: StoredMessage = {
@@ -159,19 +221,33 @@ function memoryStore(): Store {
         id: crypto.randomUUID(),
         receivedAt: new Date(),
         status: "new",
+        stage: "open",
       };
       messages.unshift(stored);
       return stored;
     },
-    async listMessages(view) {
-      return messages.filter(visible(view));
+    async listMessages(view, search) {
+      const text = cleanSearch(search).toLowerCase();
+      return messages
+        .filter(visible(view))
+        .filter(
+          (m) =>
+            !text ||
+            [m.name, m.email, m.company, m.role, m.message, m.phone].some((field) =>
+              field.toLowerCase().includes(text),
+            ),
+        );
     },
     async getMessage(id) {
-      return messages.find((m) => m.id === id) ?? null;
+      return find(id) ?? null;
     },
     async setStatus(id, status) {
-      const found = messages.find((m) => m.id === id);
+      const found = find(id);
       if (found) found.status = status;
+    },
+    async setStage(id, stage) {
+      const found = find(id);
+      if (found) found.stage = stage;
     },
     async counts() {
       return {
@@ -179,6 +255,19 @@ function memoryStore(): Store {
         all: messages.filter(visible("all")).length,
         archived: messages.filter(visible("archived")).length,
       };
+    },
+    async listNotes(messageId) {
+      return [...notes.values()]
+        .filter((note) => note.messageId === messageId)
+        .map(({ id, body, createdAt }) => ({ id, body, createdAt }));
+    },
+    async addNote(messageId, body) {
+      if (!find(messageId)) return;
+      const id = crypto.randomUUID();
+      notes.set(id, { id, messageId, body, createdAt: new Date() });
+    },
+    async deleteNote(noteId) {
+      notes.delete(noteId);
     },
     async saveSubscription(s) {
       subscriptions.set(s.endpoint, s);

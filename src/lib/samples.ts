@@ -3,7 +3,16 @@ import type { StoredMessage } from "./contact";
 /** Invented messages for the in-memory store used in local development. Never stored anywhere. */
 export function sampleMessages(): StoredMessage[] {
   const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000);
-  const blank = { website: "", projectKind: "", budget: "", timeline: "", company: "", role: "" };
+  const blank = {
+    phone: "",
+    stage: "open" as const,
+    website: "",
+    projectKind: "",
+    budget: "",
+    timeline: "",
+    company: "",
+    role: "",
+  };
   return [
     {
       ...blank,
@@ -13,6 +22,8 @@ export function sampleMessages(): StoredMessage[] {
       topic: "project",
       name: "Sam Rivera",
       email: "sam@northfield.example",
+      phone: "+20 111 000 0000",
+      stage: "replied",
       website: "northfield.example",
       projectKind: "store",
       budget: "3k-10k",

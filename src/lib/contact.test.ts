@@ -24,6 +24,7 @@ describe("parseIncoming", () => {
         topic: "project",
         name: "Sam",
         email: "sam@studio.co",
+        phone: "",
         website: "",
         projectKind: "store",
         budget: "3k-10k",
@@ -70,6 +71,7 @@ describe("display helpers", () => {
     topic: "project" as const,
     name: "",
     email: "ops@greenline.co",
+    phone: "",
     website: "",
     projectKind: "dashboard",
     budget: "",
@@ -105,5 +107,18 @@ describe("display helpers", () => {
     });
     expect(job.title).toBe("Job opportunity · Acme: Lena");
     expect(notificationFor({ ...project, message: "y".repeat(300) }).body).toHaveLength(140);
+  });
+});
+
+describe("phone numbers", () => {
+  it("keeps a number that looks like one and drops anything else", async () => {
+    const { whatsappNumber } = await import("./contact");
+    const keep = parseIncoming({ ...base, phone: " +20 (111) 476-6628 " });
+    expect(keep.ok && keep.value.phone).toBe("+20 (111) 476-6628");
+    expect(whatsappNumber("+20 (111) 476-6628")).toBe("201114766628");
+    for (const phone of ["call me", "12345", "+1 234 567 890 123 456 7", "<b>1234567</b>"]) {
+      const result = parseIncoming({ ...base, phone });
+      expect(result.ok && result.value.phone).toBe("");
+    }
   });
 });

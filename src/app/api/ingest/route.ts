@@ -39,10 +39,15 @@ export async function POST(request: Request) {
 
   const store = getStore();
   const stored = await store.addMessage(parsed.value);
+  const unread = await store
+    .counts()
+    .then((counts) => counts.new)
+    .catch(() => undefined);
   const notified = await notifyAll(store, {
     ...notificationFor(parsed.value),
     url: `/messages/${stored.id}`,
     tag: stored.id,
+    badge: unread,
   });
   return NextResponse.json({ ok: true, id: stored.id, notified }, { status: 201 });
 }

@@ -12,14 +12,22 @@ self.addEventListener("push", (event) => {
     data = { title: "New message", body: event.data ? event.data.text() : "" };
   }
   const title = data.title || "New message";
+  // The unread count on the Home Screen icon, where the platform supports badges.
+  const badge =
+    typeof data.badge === "number" && "setAppBadge" in self.navigator
+      ? self.navigator.setAppBadge(data.badge).catch(() => {})
+      : Promise.resolve();
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "",
-      icon: "/icons/192",
-      badge: "/icons/192",
-      tag: data.tag || undefined,
-      data: { url: data.url || "/" },
-    }),
+    Promise.all([
+      badge,
+      self.registration.showNotification(title, {
+        body: data.body || "",
+        icon: "/icons/192",
+        badge: "/icons/192",
+        tag: data.tag || undefined,
+        data: { url: data.url || "/" },
+      }),
+    ]),
   );
 });
 
