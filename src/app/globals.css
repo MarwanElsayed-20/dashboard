@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* The portfolio's palette and type (light, editorial), so the dashboard reads as the same brand. */
+@theme {
+  --color-background: #ecf1ed;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #dfe5e0;
+  --color-foreground: #141415;
+  --color-muted: #565a58;
+  --color-border: #cdd5cf;
+  --color-border-strong: #7b827d;
+  --color-focus: #1f4e8c;
+  --color-highlight: #dcf26b;
+  --color-danger: #a1271b;
+  --font-sans: var(--font-grotesk), system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background-color: var(--color-foreground);
+    color: var(--color-surface);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}
